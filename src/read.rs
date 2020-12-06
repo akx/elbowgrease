@@ -8,18 +8,19 @@ use flate2::read::MultiGzDecoder;
 use indicatif::{ParallelProgressIterator, ProgressBar};
 use rayon::prelude::*;
 
-use crate::elb_data::{FIELD_NAMES, LINE_RE};
+use crate::elb_data::LINE_RE;
 
 pub fn read_files_into_queue(
     record_queue: Arc<SegQueue<Vec<String>>>,
-    log_files: Vec<String>,
+    log_files: &[String],
+    fields: &[&str],
 ) -> anyhow::Result<usize> {
     let total_atom = Arc::new(AtomicUsize::new(0));
     log_files
         .par_iter()
         .progress_with(ProgressBar::new(log_files.len() as u64))
         .for_each(
-            |filename| match read_file_into_queue(record_queue.clone(), &filename) {
+            |filename| match read_file_into_queue(record_queue.clone(), &filename, fields) {
                 Err(e) => {
                     eprintln!("Error with file {}: {}", filename, e);
                 }
@@ -34,7 +35,11 @@ pub fn read_files_into_queue(
     Ok(total)
 }
 
-fn read_file_into_queue(queue: Arc<SegQueue<Vec<String>>>, file: &str) -> anyhow::Result<usize> {
+fn read_file_into_queue(
+    queue: Arc<SegQueue<Vec<String>>>,
+    file: &str,
+    fields: &[&str],
+) -> anyhow::Result<usize> {
     let md = metadata(&file)?;
     if md.len() == 0 {
         return Ok(0);
@@ -54,7 +59,7 @@ fn read_file_into_queue(queue: Arc<SegQueue<Vec<String>>>, file: &str) -> anyhow
             }
             Some(caps) => {
                 let mut vec: Vec<String> = Vec::new();
-                for n in FIELD_NAMES.iter() {
+                for n in fields.iter() {
                     vec.push(caps.name(n).unwrap().as_str().parse().unwrap());
                 }
                 queue.push(vec);

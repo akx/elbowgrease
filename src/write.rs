@@ -1,4 +1,3 @@
-use crate::elb_data::FIELD_NAMES;
 use crossbeam_queue::SegQueue;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -10,13 +9,14 @@ const RECORD_SEP: &str = "\n";
 pub fn write_queue_to_file(
     queue: Arc<SegQueue<Vec<String>>>,
     filename: &str,
+    fields: &[&str],
 ) -> anyhow::Result<()> {
     let file = File::create(filename)?;
     let mut file = BufWriter::with_capacity(524_288, file);
 
     let mut total: usize = 0;
 
-    let vec: Vec<String> = FIELD_NAMES.iter().map(|s| String::from(*s)).collect();
+    let vec: Vec<String> = fields.iter().map(|s| String::from(*s)).collect();
     write_line(&mut file, &vec)?;
     loop {
         match queue.pop() {
