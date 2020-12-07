@@ -17,6 +17,13 @@ mod elb_data;
 mod read;
 mod write;
 
+struct Config<'a> {
+    pub input_dir: &'a str,
+    pub output_file: &'a str,
+    pub fields: Vec<&'a str>,
+    pub use_tab: bool,
+}
+
 fn find_files(input_dir: &str) -> anyhow::Result<Vec<String>> {
     let mut log_files: Vec<String> = Vec::new();
     for entry in WalkDir::new(input_dir) {
@@ -33,18 +40,24 @@ fn find_files(input_dir: &str) -> anyhow::Result<Vec<String>> {
     Ok(log_files)
 }
 
-fn process(input_dir: &str, output_file: &str, fields: &[&str]) -> anyhow::Result<()> {
-    let log_files = find_files(input_dir)?;
+fn process(config: &Config) -> anyhow::Result<()> {
+    let log_files = find_files(config.input_dir)?;
     println!("Found {} log files", log_files.len());
     let record_queue: Arc<SegQueue<Vec<String>>> = Arc::new(SegQueue::new());
 
     rayon::scope(|s| {
         s.spawn(|_| {
-            read_files_into_queue(record_queue.clone(), &log_files, fields).unwrap();
+            read_files_into_queue(record_queue.clone(), &log_files, &config.fields).unwrap();
             record_queue.push(vec![]);
         });
         s.spawn(|_| {
-            write::write_queue_to_file(record_queue.clone(), output_file, fields).unwrap();
+            write::write_queue_to_file(
+                record_queue.clone(),
+                config.output_file,
+                &config.fields,
+                config.use_tab,
+            )
+            .unwrap();
         });
     });
 
@@ -79,11 +92,20 @@ fn main() {
                 .help("Keep these fields")
                 .possible_values(&FIELD_NAMES),
         )
+        .arg(Arg::with_name("tab").long("tab").help("Use tab separator"))
         .get_matches();
     let input_dir = matches.value_of("input").unwrap();
     let output_file = matches.value_of("output").unwrap();
-    let keep_fields: Vec<&str> = matches
+    let fields: Vec<&str> = matches
         .values_of("keep")
         .map_or_else(|| FIELD_NAMES.iter().copied().collect(), |m| m.collect());
-    process(input_dir, output_file, &keep_fields).unwrap();
+    let use_tab = matches.is_present("tab");
+
+    let config = Config {
+        input_dir,
+        output_file,
+        fields,
+        use_tab,
+    };
+    process(&config).unwrap();
 }
